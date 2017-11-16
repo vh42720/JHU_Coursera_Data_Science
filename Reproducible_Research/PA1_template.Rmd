@@ -1,0 +1,149 @@
+---
+title: "Reproducible Research: Peer Assessment 1"
+author: "vh42720"
+date: "August 29, 2017"
+output: md_document
+---
+
+Loading required packages
+
+```{r loading packages, echo=TRUE}
+library(statsr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+```
+
+Loading the data and transform data into suitable classes
+
+```{r activity, echo=TRUE}
+unzip("./repdata%2Fdata%2Factivity.zip")
+activity <- read.csv("activity.csv")
+activity$date <- ymd(as.character(activity$date))
+```
+
+What is the mean total of steps taken per day?
+1.Calculate the total number of steps taken per day
+2.If you do not understand the difference between a histogram and a barplot, research the difference between them. Make a histogram of the total number of steps taken each day
+3.Calculate and report the mean and median of the total number of steps taken per day
+
+```{r total steps per day, echo=TRUE}
+date_steps <- activity %>%
+        group_by(date) %>%
+        filter(!is.na(steps)) %>%
+        summarize(total=sum(steps))%>%
+        print()
+```
+
+Histogram of steps taken per day
+
+```{r plot steps per day, echo=TRUE}
+hist(date_steps$total, main = "Total steps per day",
+     xlab = "Total steps", ylab = "Frequency", col = "blue")
+abline(v=mean(date_steps$total,na.rm = T), col="red", lwd = 5)
+```
+
+The mean and median of the total number of steps taken per day
+
+```{r summary of data, echo=TRUE}
+summary(date_steps$total)
+```
+
+What is the average daily activity pattern?
+
+1.Make a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+2.Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+We get the needed data for the interval
+
+```{r interval steps, echo=TRUE}
+interval_steps <- activity %>%
+        group_by(interval) %>%
+        filter(!is.na(steps)) %>%
+        summarize(average_steps = mean(steps)) %>%
+        print()
+max <- max(interval_steps$average_steps)
+interval_max<-interval_steps[interval_steps$average_steps==max,]
+print(paste0("The interval that contains the maximum number of step is ",interval_max$interval))
+```
+
+Plot the time series for the average steps per 5 minutes interval. we denote the max interval as the red dot on the graph
+
+```{r time series, echo=TRUE}
+ggplot(data=interval_steps, aes(x=average_steps, y=interval))+
+        geom_line()+
+        geom_point(data = interval_max, col="red", lwd=5)+
+        labs(title="Time series average steps across dates for 5 minutes interval",
+              x= "Average Steps", y= "interval")
+```
+
+Imputing missing values
+
+Note that there are a number of days/intervals where there are missing values (coded as NA). The presence of missing days may introduce bias into some calculations or summaries of the data.
+
+1.Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+2.Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+3.Create a new dataset that is equal to the original dataset but with the missing data filled in.
+4.Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+Total number of NAs in the data
+```{r Total NAs, echo=TRUE}
+total_na <- sum(is.na(activity$steps))
+print(paste0("The total of NAs is: ", total_na))
+```
+
+Let's fill the NA with the average steps of that day. We will use floor function to get the appropriated data. 
+
+```{r fill in NAs, echo=TRUE}
+data_no_na <- activity %>%
+        group_by(date) %>%
+        mutate(average_steps = mean(steps,na.rm=T))%>%
+        mutate(average_steps = replace(average_steps, is.nan(average_steps),
+                                       mean(activity$steps,na.rm=T))) %>%
+        mutate(steps = replace(steps, is.na(steps), average_steps)) %>%
+        print()
+```
+        
+Histogram of the new data set with NAs filled in. 
+
+```{r Histogram, echo=TRUE}
+hist(data_no_na$steps, main="No NAs data histogram", xlab = "Total step", col="blue")
+```
+
+We can look at the summary of the new data vs. old
+
+```{r comparison, echo=TRUE}
+summary(activity$steps)
+summary(data_no_na$steps)
+```
+
+We can see that by filling in these NAs, our data becomes extremely right skewed! 
+
+Are there differences in activity patterns between weekdays and weekends?
+
+For this part the weekdays() function may be of some help here. Use the dataset with the filled-in missing values for this part.
+
+1.Create a new factor variable in the dataset with two levels - "weekdays" and "weekends" indicating whether a given date is a weekday or weekend day.
+2.Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data.
+
+We first want to set the type of day to the data
+
+```{r set date type, echo=TRUE}
+data_no_na <- data_no_na %>%
+        mutate(type = ifelse(wday(date)==1 |wday(date)==7, 
+               "weekend", "weekday")) %>%
+        group_by(interval, type) %>%
+        summarize(average_steps = mean(steps,na.rm=T)) %>%
+        print()
+        
+```
+
+Now we can plot the time series of the steps vs interval with facet type. 
+
+```{r plot new data, echo=TRUE}
+ggplot(data_no_na, aes(x=interval, y=average_steps))+
+        geom_line() +
+        facet_grid(type ~ .) +
+        labs(title="Differences in activity patterns between weekdays and weekends",
+             x = "Interval", y= "Average Steps")
+```

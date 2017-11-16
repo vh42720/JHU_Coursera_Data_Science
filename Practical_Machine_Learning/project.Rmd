@@ -1,0 +1,126 @@
+---
+title: "project"
+author: "vh42720"
+date: "September 23, 2017"
+output: html_document
+---
+###Setting up files and packages
+
+```{r setup, message=FALSE,warning=FALSE,results='hide'}
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileUrl, destfile = "./pml_training.csv")
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileUrl,destfile = "pml_testing.csv")
+lib_names <- list("tidyverse","caret","corrplot","gbm","forecast","rattle","stringr","rebus","rpart")
+lapply(lib_names,library,character.only=TRUE)
+```
+
+###Loading files
+(Class A) exactly according to the specification, (Class B) throwing the elbows to the front, (Class C) lifting the dumbbell only halfway, (Class D) lowering the dumbbell only halfway and (Class E) throwing the hips to the front .
+
+```{r data}
+df <- read.csv("pml_training.csv")
+test <- read.csv("pml_testing.csv")
+```
+
+###Cleaning data
+
+First we will clean out variables that is irrelevant to the study such names, times. We also use near zero variance to weed out more variables. Lastly, we can substitute features with lots of NA with 0 but it will create a near zero variance variable. Thus, we will also delete these features from our dataset.
+```{r cleaning}
+##Irrelevant variables
+pattern <- c("X","user_name","timestamp")
+irrIndex <- str_detect(names(df),pattern=or1(pattern))
+df <- df[,!irrIndex]
+test <- test[,!irrIndex]
+##Near zero variance
+nzvIndex <- nzv(df,saveMetrics = TRUE)$nzv
+df <- df[,!nzvIndex]
+test <- test[,!nzvIndex]
+##No NA values
+naIndex <- colSums(is.na(df))!=0
+df <- df[,!naIndex]
+test <- test[,!naIndex]
+```
+
+###Cross Validation
+
+Now we will separate our df into training (0.8) and testing (0.2) sets. To keep the paper short, we won't resample more than once. 
+
+```{r data partitioning}
+inTrain <- createDataPartition(df$classe, p=0.8, list=FALSE)
+training <- df[inTrain,]
+validation <- df[-inTrain,];rm(inTrain)
+```
+
+Our Cross Validation setup is as followed:
+*1. Training set: 15699 observations
+*2. Validation set: 3923 observations
+*3. Test set: 20 observations
+
+###Exploratory Data Analysis
+
+First, we want to get a general feel for how each variable relates to each other through GGally package.
+
+```{r correlation}
+corrplot(cor(training[,-54]),tl.cex = 0.5)
+```
+
+There are not many variables correlate to each other
+
+###Model
+We will attemp to fit 3 models using classification tree (since the classe is a factor and not numerical), random forest, and boosting. method.  
+####Classification Tree
+
+```{r tree}
+modTree <- train(classe~., method="rpart",data=training)
+fancyRpartPlot(modTree$finalModel)
+```
+```{r tree accuracy}
+predTree <- predict(modTree,validation)
+statTree <- c(Accuracy = confusionMatrix(predTree,validation$classe)$overall[[1]],
+              out_of_sample_error = 1-confusionMatrix(predTree,validation$classe)$overall[[1]])
+statTree
+```
+We can see that classification tree somehow completely miss the Class:D which brings its accuracy down subtaintially. 
+
+###Random Forest
+
+```{r forest,cache=TRUE}
+modForest <- train(classe~., method="rf",data=training)
+modForest
+
+predForest <- predict(modForest,validation)
+statForest <- c(Accuracy = confusionMatrix(predForest,validation$classe)$overall[[1]],
+              out_of_sample_error = 1-confusionMatrix(predForest,validation$classe)$overall[[1]])
+statForest
+```
+
+We can see the Random forest methods give us almost 100% accuracy. However, the big trade off is the running speed. It tooks much longer than classification tree. 
+
+###Boosting
+
+Final method is boosting should give almost the same accuracy as random forest and suffers from the same weakness of running time!
+
+```{r boosting, cache=TRUE}
+modBoost <- train(classe~., method="gbm",data=training,verbose=FALSE)
+modBoost
+
+predBoost <- predict(modBoost,validation)
+statBoost <- c(Accuracy = confusionMatrix(predBoost,validation$classe)$overall[[1]],
+              out_of_sample_error = 1-confusionMatrix(predBoost,validation$classe)$overall[[1]])
+statBoost
+```
+
+Our comparison between methods are as followed
+
+```{r comparison}
+rbind(statTree,statForest,statBoost)
+```
+
+Based on the accuracy rate, we will choost random forest as the final model to test
+
+###Test results
+
+```{r test, cache=TRUE}
+predict(modForest,test)
+```
